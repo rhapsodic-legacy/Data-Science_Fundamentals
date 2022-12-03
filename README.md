@@ -3,4 +3,4 @@
 
 # Strive to be the best we can be, with smiles and loving energy. Respect. 
 
-##### Great times. Truly.
+##### Great times. Truly phenom.
