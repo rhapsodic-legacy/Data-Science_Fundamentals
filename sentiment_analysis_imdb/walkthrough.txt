@@ -1,0 +1,111 @@
+# Sentiment Analysis with Keras: A Complete Walkthrough
+
+## Loading the IMDB Dataset
+
+The IMDB dataset is a collection of movie reviews from the Internet Movie Database (IMDB) that are labeled as either positive or negative. We load the dataset using the `imdb.load_data()` function from Keras.
+
+### Vocabulary Size Configuration
+
+- **Vocabulary Size**: We set the vocabulary size to 10,000 words
+- **Why 10,000?**: This is a common choice for many NLP tasks, as it captures a large number of words while reducing the dimensionality of the input data
+- **Rationale**: Choosing a vocabulary size depends on the specific task and dataset. A larger vocabulary size can capture more nuances in language but increases the risk of overfitting and computational costs. In this case, 10,000 words provides a good balance between capturing relevant information and reducing noise.
+
+## Data Preprocessing
+
+Before training the model, we need to preprocess the data by padding the sequences to a maximum length. This ensures that all input sequences have the same length, which is necessary for training a neural network.
+
+### Sequence Length Configuration
+
+- **Maximum Length**: We set the maximum length to 500 words
+- **Why 500?**: This is a reasonable choice for movie reviews, as most reviews are likely to be within this length
+- **Why Padding?**: Padding sequences ensures that all input data has the same shape, which is necessary for training a neural network. Without padding, the model would need to handle sequences of varying lengths, which can be computationally expensive and challenging to implement.
+
+## Building the Sentiment Analysis Model
+
+The sentiment analysis model consists of several layers:
+
+### Embedding Layer
+
+**Purpose**: The embedding layer converts each word in the input sequence into a dense vector representation. This allows the model to capture semantic relationships between words.
+
+**Technical Details**:
+- **Number of Parameters**: The number of parameters in the embedding layer is determined by the vocabulary size and the embedding dimension
+- **Calculation**: 10,000 words × 16 dimensions = 160,000 parameters
+- **Why 16 Dimensions?**: The choice of embedding dimension depends on the complexity of the task and the size of the dataset. A higher dimension can capture more nuances in language but increases the risk of overfitting. In this case, 16 dimensions provides a good balance between capturing relevant information and reducing noise.
+
+### GlobalAveragePooling1D Layer
+
+**Purpose**: The GlobalAveragePooling1D layer computes the average of the input sequence along the time axis. This reduces the dimensionality of the input data and captures the overall sentiment of the review.
+
+**Why Average Pooling?**: Average pooling is a common choice for reducing the dimensionality of sequence data. It captures the overall trend in the data while reducing the impact of noise and outliers.
+
+### Dense Layers
+
+**Purpose**: The dense layers are used for classification. We use two dense layers with ReLU and sigmoid activation functions, respectively.
+
+#### Activation Functions
+
+**ReLU Activation Function**:
+- Common choice for hidden layers
+- Introduces non-linearity into the model
+- Allows the model to capture complex relationships between inputs and outputs
+
+**Sigmoid Activation Function**:
+- Used for binary classification tasks
+- Outputs a probability value between 0 and 1
+- Indicates the likelihood of a positive or negative review
+
+#### Parameter Count
+
+**Dense Layer Parameters**:
+- **First Dense Layer**: 16 units → 256 parameters (16 × 16)
+- **Second Dense Layer**: 1 unit → 17 parameters (16 × 1 + 1 bias)
+
+## Training and Evaluating the Model
+
+After building the model, we compile it with binary cross-entropy loss, Adam optimizer, and accuracy as the evaluation metric.
+
+### Model Configuration
+
+**Binary Cross-Entropy Loss**:
+- Common choice for binary classification tasks
+- Measures the difference between the predicted probabilities and the true labels
+
+**Adam Optimizer**:
+- Popular choice for deep learning models
+- Adapts the learning rate for each parameter based on the magnitude of the gradient
+- Helps to stabilize the training process
+
+**Accuracy Metric**:
+- Common evaluation metric for classification tasks
+- Measures the proportion of correctly classified samples
+
+## Model Evaluation
+
+After training the model, we evaluate it on the test data and print the test accuracy.
+
+**Test Accuracy**: The test accuracy measures the proportion of correctly classified samples in the test data. A high test accuracy indicates that the model generalizes well to unseen data.
+
+## Conclusion
+
+In this walkthrough, we explained the key components of a sentiment analysis model using Keras. We discussed the choice of:
+
+- Vocabulary size (10,000 words)
+- Maximum sequence length (500 words)
+- Embedding dimension (16 dimensions)
+- Activation functions (ReLU and Sigmoid)
+
+By understanding these components, students can build their own machine learning models and make informed decisions about model architecture and hyperparameters.
+
+## Quick Reference Summary
+
+| Component | Value | Reasoning |
+|-----------|-------|-----------|
+| Vocabulary Size | 10,000 words | Balance between coverage and efficiency |
+| Max Sequence Length | 500 words | Suitable for movie review length |
+| Embedding Dimension | 16 | Good balance, prevents overfitting |
+| Pooling Method | Global Average | Captures overall sentiment |
+| Hidden Activation | ReLU | Standard for hidden layers |
+| Output Activation | Sigmoid | Binary classification probability |
+| Loss Function | Binary Cross-Entropy | Standard for binary classification |
+| Optimizer | Adam | Adaptive learning rates |
