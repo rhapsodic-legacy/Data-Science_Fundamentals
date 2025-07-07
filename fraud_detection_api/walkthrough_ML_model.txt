@@ -1,0 +1,183 @@
+# Fraud Detection Project Documentation
+
+## Introduction
+
+This project aimed to develop a fraud detection system using the Kaggle Credit Card Fraud dataset, which includes ~284,000 transactions, with ~8% labeled as fraudulent. The challenge was to accurately identify fraud while operating within Google Colab's free tier limitations:
+
+- **RAM**: ~12-16 GB 
+- **GPU Access**: Intermittent
+- **Runtime Limit**: 12 hours
+
+The final model—a hybrid of an autoencoder and XGBoost—achieved:
+- **AUC**: 0.9981
+- **F1-score**: 0.9405 
+- **Training Time**: ~24 hours across multiple sessions
+
+This documentation is designed to teach advanced students how to build, iterate, and deploy a machine learning model with limited resources. It covers the rationale for each component, the integration of the autoencoder and XGBoost, and strategies to overcome hardware constraints.
+
+---
+
+## Section 1: Model Development and Integration
+
+### 1.1 The Starting Point: Autoencoder for Anomaly Detection
+
+#### Why an Autoencoder?
+
+**Unsupervised Learning**: Fraud detection datasets are often imbalanced, with few fraudulent examples. An autoencoder learns to reconstruct normal (non-fraudulent) transactions, flagging anomalies (fraud) based on high reconstruction errors. This makes it ideal for unsupervised anomaly detection.
+
+**Dimensionality Reduction**: The autoencoder compresses input features into a lower-dimensional "encoded" representation, capturing essential patterns in normal data.
+
+#### Implementation Basics
+
+**Architecture**: The initial autoencoder was simple:
+- Input layer
+- Bottleneck layer (e.g., Dense(4, relu))
+- Output layer reconstructing the input (Dense(input_dim, sigmoid))
+
+**Training**: Trained only on non-fraudulent transactions using Mean Squared Error (MSE) loss, with reconstruction error as the anomaly score.
+
+**Serialization with Pickle**: I used pickle to save models and scalers:
+```python
+# Example pickle file names
+scaler_minmax_final_20250705_final.pkl
+```
+
+#### Why Pickle?
+
+- **Simplicity**: Allows quick saving and loading of Python objects like models and scalers
+- **Practicality**: Essential for resuming work after Colab timeouts and for sharing models across environments
+
+### 1.2 Adding XGBoost: A Supervised Boost
+
+#### Why XGBoost?
+
+**High Performance**: XGBoost is a gradient boosting algorithm known for its speed, efficiency, and strong performance on classification tasks, especially with imbalanced data.
+
+**Complementary Strengths**: While the autoencoder excels at unsupervised anomaly detection, XGBoost leverages labeled data for precise fraud classification, enhancing overall accuracy.
+
+#### How the Autoencoder and XGBoost Integrate
+
+**Feature Extraction**: The autoencoder's encoder compresses transaction features into a lower-dimensional representation (e.g., 16 dimensions in the final model).
+
+**Supervised Training**: These encoded features are fed into XGBoost, which is trained on labeled data (fraud/non-fraud) to predict fraud probabilities.
+
+**Prediction Pipeline**: For a new transaction:
+1. Preprocess with a scaler (e.g., MinMaxScaler)
+2. Encode with the autoencoder
+3. Classify with XGBoost
+
+This hybrid approach combines the autoencoder's ability to detect anomalies with XGBoost's classification power, resulting in a robust fraud detection system.
+
+---
+
+## Section 2: From MVP to Final Model
+
+### 2.1 The Original Autoencoder (MVP)
+
+#### Initial Results
+
+**Architecture**: 
+```
+Input → Dense(4, relu) → Dense(input_dim, sigmoid)
+```
+
+**Performance**: 
+- AUC: ~0.68
+- F1-score: Low due to dataset imbalance
+
+**Observations**: The shallow architecture and small encoding dimension limited its ability to capture complex fraud patterns.
+
+#### Challenges with Google Colab
+
+- **Limited GPU Access**: GPU availability was inconsistent, requiring CPU fallbacks
+- **12-Hour Timeout**: Training had to be split across sessions, necessitating checkpointing
+- **Memory Constraints**: The free tier's ~12-16 GB RAM restricted batch sizes and model complexity
+
+#### Strategies
+
+**Checkpointing**: Saved models to Google Drive:
+```python
+# Example checkpoint file
+autoencoder_minmax_final_20250705_final.keras
+```
+
+**Awareness**: From the start, we planned for these limitations, using lightweight models and efficient preprocessing.
+
+### 2.2 Iterative Improvements
+
+#### Enhancing the Autoencoder
+
+**Deeper Architecture**: Expanded to:
+```
+Input → Dense(16, LeakyReLU) → Dropout(0.2) → Dense(8, LeakyReLU) → ...
+```
+- Encoding dimension increased from 4 to 16
+
+**Improvements**: 
+- LeakyReLU avoided dead neurons
+- Dropout reduced overfitting
+- Early stopping and learning rate scheduling cut training time to ~25-30 minutes per run
+
+**Results**: 
+- AUC improved to 0.8464
+- Best F1-score: 0.0060
+- Reconstruction errors: 0.005071 (normal) vs. 0.000294 (fraud)
+
+#### Experimentation
+
+**Encoding Dimension**: Increasing from 4 to 16 improved performance (AUC 0.8464), reflecting better pattern capture.
+
+**Feature Engineering**: Added features like `time_since_last_transaction` to enhance fraud detection, saved via pickle to avoid recomputation.
+
+#### Struggles
+
+- **Imbalance**: Low F1-scores persisted due to the rarity of fraud, prompting the addition of XGBoost
+- **Time**: Total training took ~24 hours, spread across sessions due to Colab's runtime limits
+
+### 2.3 Expansion to XGBoost
+
+**Integration**: Encoded features from the autoencoder (16 dimensions) were used to train XGBoost.
+
+**Results**: 
+- XGBoost AUC: 0.9981
+- F1-score: 0.9405
+- 5-fold CV AUC: 0.9980 ± 0.0004
+
+**Feature Importance**: XGBoost highlighted key encoded features (e.g., weights up to 0.3018825), confirming the autoencoder's role.
+
+#### Final Model Files
+
+```
+autoencoder_minmax_final_20250705_final.keras
+xgboost_model_minmax_final_20250705_final.pkl
+scaler_minmax_final_20250705_final.pkl
+```
+
+### 2.4 Lessons for Students Without Deep Learning Hardware
+
+**Resource Management**: Use efficient algorithms (e.g., XGBoost) and checkpointing to handle timeouts. The 24-hour training time shows that persistence pays off.
+
+**Iterative Approach**: Start simple (e.g., basic autoencoder), then iterate (e.g., deeper model, XGBoost). The increase to 16 dimensions is a great example!
+
+**Cloud Tools**: Google Colab's free tier, despite limitations, enabled resume-worthy results (AUC 0.9981). Students can achieve similar success with planning and creativity.
+
+---
+
+## Quick Reference
+
+### Key Performance Metrics
+- **Final AUC**: 0.9981
+- **Final F1-score**: 0.9405
+- **Training Time**: ~24 hours (across multiple sessions)
+- **Dataset**: ~284,000 transactions, ~8% fraudulent
+
+### Model Architecture Evolution
+1. **MVP**: Dense(4) → AUC ~0.68
+2. **Improved**: Dense(16) with LeakyReLU/Dropout → AUC 0.8464
+3. **Final**: Autoencoder + XGBoost → AUC 0.9981
+
+### File Management Strategy
+- Use descriptive timestamps in filenames
+- Leverage pickle for Python objects
+- Save checkpoints to Google Drive
+- Plan for 12-hour runtime limits
