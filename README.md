@@ -17,7 +17,7 @@ This repository contains a series of projects designed to demonstrate fundamenta
 + walkthrough.txt: A detailed walkthrough of the code and its implementation.
 
 **fraud_detection_api**: A continuation of 'fraud_detection_kaggle', introducing an XGBoost supervised model, as well as functionality deploying the model to the internet. 
-+ walkthrough.txt: A detailed walkthrough of the code for the machine learning model and its implementation.
++ walkthrough_ML_model.txt: A detailed walkthrough of the code for the machine learning model and its implementation.
 
   
 ### License
