@@ -12,7 +12,7 @@ This repository contains a series of projects designed to demonstrate fundamenta
 + sentiment_analysis_imdb.py: The Python code for the sentiment analysis model.
 + walkthrough.txt: A detailed walkthrough of the code and its implementation.
 
-**Fraud_Detection_Kaggle**: A fraud detection project utilising the Kaggle fraud detection dataset. 
+**fraud_detection_basic**: A fraud detection project utilising the Kaggle fraud detection dataset. 
 + fraud_detection.py: The Python code for the fraud detection autoencoder.
 + walkthrough.txt: A detailed walkthrough of the code and its implementation.
 
