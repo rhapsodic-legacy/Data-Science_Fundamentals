@@ -1,0 +1,506 @@
+# Credit Card Fraud Detection using Autoencoders: A Comprehensive Guide
+
+# Importing Libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import glob
+import kagglehub
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_curve, auc, roc_auc_score
+from sklearn.preprocessing import StandardScaler
+import tensorflow as tf
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
+import warnings
+warnings.filterwarnings('ignore')
+
+def load_dataset():
+    """
+    Load the credit card fraud dataset from Kaggle.
+    
+    Returns:
+        pandas.DataFrame: The loaded dataset
+    """
+    print("Downloading dataset from Kaggle...")
+    # Download the dataset using kagglehub
+    path = kagglehub.dataset_download("dhanushnarayananr/credit-card-fraud")
+    print(f"Dataset downloaded to: {path}")
+    
+    # Find and load the CSV file
+    csv_files = glob.glob(path + '/*.csv')
+    if not csv_files:
+        raise FileNotFoundError("No CSV files found in the dataset directory")
+    
+    df = pd.read_csv(csv_files[0])
+    print(f"Dataset loaded successfully. Shape: {df.shape}")
+    return df
+
+def explore_dataset(df):
+    """
+    Perform basic exploratory data analysis on the dataset.
+    
+    Args:
+        df (pandas.DataFrame): The dataset to explore
+    """
+    print("\n" + "="*50)
+    print("DATASET EXPLORATION")
+    print("="*50)
+    
+    print(f"Dataset shape: {df.shape}")
+    print(f"Missing values: {df.isnull().sum().sum()}")
+    
+    # Check class distribution
+    fraud_counts = df['fraud'].value_counts()
+    print(f"\nClass distribution:")
+    print(f"Non-fraud transactions: {fraud_counts[0]} ({fraud_counts[0]/len(df)*100:.2f}%)")
+    print(f"Fraud transactions: {fraud_counts[1]} ({fraud_counts[1]/len(df)*100:.2f}%)")
+    
+    print(f"\nFirst 5 rows:")
+    print(df.head())
+    
+    print(f"\nDataset info:")
+    print(df.info())
+
+def feature_engineering(df):
+    """
+    Create new features to improve model performance.
+    
+    Feature engineering is crucial for anomaly detection as it helps the model
+    identify more subtle patterns that distinguish fraudulent from normal transactions.
+    
+    Args:
+        df (pandas.DataFrame): Original dataset
+        
+    Returns:
+        pandas.DataFrame: Dataset with engineered features
+    """
+    print("\n" + "="*50)
+    print("FEATURE ENGINEERING")
+    print("="*50)
+    
+    # Create a copy to avoid modifying original data
+    df_engineered = df.copy()
+    
+    # Feature 1: Combined distance and price ratio
+    # This captures transactions that are both distant and expensive relative to usual patterns
+    df_engineered['distance_price_ratio'] = df_engineered['distance_from_home'] * df_engineered['ratio_to_median_purchase_price']
+    
+    # Feature 2: Distance from last transaction combined with price ratio
+    # Captures suspicious patterns of distance and spending
+    df_engineered['last_distance_price_ratio'] = df_engineered['distance_from_last_transaction'] * df_engineered['ratio_to_median_purchase_price']
+    
+    # Feature 3: Average ratio per retailer (if retailer column exists)
+    if 'retailer' in df_engineered.columns:
+        retailer_avg_ratio = df_engineered.groupby('retailer')['ratio_to_median_purchase_price'].transform('mean')
+        df_engineered['retailer_avg_ratio'] = retailer_avg_ratio
+        
+        # Feature 4: Standard deviation of ratio per retailer
+        retailer_std_ratio = df_engineered.groupby('retailer')['ratio_to_median_purchase_price'].transform('std')
+        df_engineered['retailer_std_ratio'] = retailer_std_ratio.fillna(0)
+        
+        # Feature 5: Transaction frequency per retailer
+        retailer_frequency = df_engineered.groupby('retailer').size()
+        df_engineered['retailer_frequency'] = df_engineered['retailer'].map(retailer_frequency)
+    
+    # Feature 6: Time-based features (if timestamp exists)
+    if 'timestamp' in df_engineered.columns:
+        df_engineered['timestamp'] = pd.to_datetime(df_engineered['timestamp'])
+        df_engineered['hour'] = df_engineered['timestamp'].dt.hour
+        df_engineered['day_of_week'] = df_engineered['timestamp'].dt.dayofweek
+        df_engineered['is_weekend'] = (df_engineered['day_of_week'] >= 5).astype(int)
+        df_engineered['is_night'] = ((df_engineered['hour'] >= 22) | (df_engineered['hour'] <= 6)).astype(int)
+    
+    # Feature 7: Price deviation from user's average
+    if 'user' in df_engineered.columns:
+        user_avg_price = df_engineered.groupby('user')['ratio_to_median_purchase_price'].transform('mean')
+        df_engineered['price_deviation_from_user_avg'] = df_engineered['ratio_to_median_purchase_price'] - user_avg_price
+    
+    print(f"Original features: {len(df.columns)}")
+    print(f"Engineered features: {len(df_engineered.columns)}")
+    print(f"New features added: {len(df_engineered.columns) - len(df.columns)}")
+    
+    return df_engineered
+
+def prepare_data(df):
+    """
+    Prepare data for training by separating features and target, and splitting into train/test sets.
+    
+    Args:
+        df (pandas.DataFrame): The engineered dataset
+        
+    Returns:
+        tuple: X_train, X_test, y_train, y_test, scaler
+    """
+    print("\n" + "="*50)
+    print("DATA PREPARATION")
+    print("="*50)
+    
+    # Separate features and target
+    X = df.drop('fraud', axis=1)
+    y = df['fraud']
+    
+    # Remove non-numeric columns if any
+    X = X.select_dtypes(include=[np.number])
+    
+    print(f"Features shape: {X.shape}")
+    print(f"Target shape: {y.shape}")
+    
+    # Split into training and testing sets
+    # Stratify ensures both sets have similar fraud/non-fraud ratios
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+    
+    print(f"Training set shape: {X_train.shape}")
+    print(f"Test set shape: {X_test.shape}")
+    
+    # Scale features for better neural network performance
+    # Autoencoders are sensitive to feature scales
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    print("Data scaling completed")
+    
+    return X_train_scaled, X_test_scaled, y_train, y_test, scaler
+
+def create_autoencoder(input_dim, encoding_dim=4, learning_rate=0.001):
+    """
+    Create and compile an autoencoder model.
+    
+    An autoencoder consists of:
+    1. Encoder: Compresses input to lower-dimensional representation
+    2. Decoder: Reconstructs input from compressed representation
+    
+    For anomaly detection, we train on normal data. Anomalies should have
+    higher reconstruction errors since they differ from normal patterns.
+    
+    Args:
+        input_dim (int): Number of input features
+        encoding_dim (int): Size of the compressed representation (bottleneck)
+        learning_rate (float): Learning rate for optimization
+        
+    Returns:
+        tensorflow.keras.Model: Compiled autoencoder model
+    """
+    print("\n" + "="*50)
+    print("CREATING AUTOENCODER MODEL")
+    print("="*50)
+    
+    # Input layer
+    input_layer = Input(shape=(input_dim,), name='input')
+    
+    # Encoder: Compress input to lower dimension
+    encoded = Dense(
+        encoding_dim, 
+        activation='relu', 
+        name='encoder'
+    )(input_layer)
+    
+    # Decoder: Reconstruct input from compressed representation
+    decoded = Dense(
+        input_dim, 
+        activation='sigmoid',  # Sigmoid ensures output is between 0 and 1
+        name='decoder'
+    )(encoded)
+    
+    # Create the autoencoder model
+    autoencoder = Model(inputs=input_layer, outputs=decoded, name='autoencoder')
+    
+    # Compile with Adam optimizer and MSE loss
+    # MSE measures reconstruction quality
+    autoencoder.compile(
+        optimizer=Adam(learning_rate=learning_rate),
+        loss='mean_squared_error',
+        metrics=['mae']  # Mean Absolute Error for additional monitoring
+    )
+    
+    print(f"Autoencoder created with:")
+    print(f"- Input dimension: {input_dim}")
+    print(f"- Encoding dimension: {encoding_dim}")
+    print(f"- Learning rate: {learning_rate}")
+    
+    autoencoder.summary()
+    
+    return autoencoder
+
+def train_autoencoder(autoencoder, X_train, y_train, epochs=50, batch_size=32):
+    """
+    Train the autoencoder on non-fraudulent transactions only.
+    
+    Key insight: We only train on normal transactions so the model learns
+    to reconstruct normal patterns well. Fraudulent transactions should
+    have higher reconstruction errors.
+    
+    Args:
+        autoencoder: The autoencoder model
+        X_train: Training features
+        y_train: Training labels
+        epochs (int): Number of training epochs
+        batch_size (int): Batch size for training
+        
+    Returns:
+        tensorflow.keras.callbacks.History: Training history
+    """
+    print("\n" + "="*50)
+    print("TRAINING AUTOENCODER")
+    print("="*50)
+    
+    # Filter to only non-fraudulent transactions
+    normal_transactions = X_train[y_train == 0]
+    
+    print(f"Training on {len(normal_transactions)} normal transactions")
+    print(f"Epochs: {epochs}, Batch size: {batch_size}")
+    
+    # Train autoencoder to reconstruct normal transactions
+    # Input and output are the same (unsupervised learning)
+    history = autoencoder.fit(
+        normal_transactions, 
+        normal_transactions,  # Target is same as input
+        epochs=epochs,
+        batch_size=batch_size,
+        validation_split=0.1,  # Use 10% for validation
+        verbose=1,
+        shuffle=True
+    )
+    
+    return history
+
+def evaluate_model(autoencoder, X_test, y_test):
+    """
+    Evaluate the autoencoder's performance for fraud detection.
+    
+    We use reconstruction error as an anomaly score:
+    - Low error: Normal transaction (good reconstruction)
+    - High error: Potential fraud (poor reconstruction)
+    
+    Args:
+        autoencoder: Trained autoencoder model
+        X_test: Test features
+        y_test: Test labels
+        
+    Returns:
+        tuple: (reconstruction_errors, auc_score)
+    """
+    print("\n" + "="*50)
+    print("MODEL EVALUATION")
+    print("="*50)
+    
+    # Get reconstructions for test set
+    reconstructions = autoencoder.predict(X_test, verbose=0)
+    
+    # Calculate reconstruction error (MSE) for each transaction
+    reconstruction_errors = np.mean((X_test - reconstructions) ** 2, axis=1)
+    
+    # Calculate AUC score
+    # Higher reconstruction error should correlate with fraud
+    auc_score = roc_auc_score(y_test, reconstruction_errors)
+    
+    print(f"AUC Score: {auc_score:.4f}")
+    print(f"Mean reconstruction error for normal transactions: {reconstruction_errors[y_test == 0].mean():.6f}")
+    print(f"Mean reconstruction error for fraud transactions: {reconstruction_errors[y_test == 1].mean():.6f}")
+    
+    return reconstruction_errors, auc_score
+
+def plot_roc_curve(y_test, reconstruction_errors):
+    """
+    Plot ROC curve to visualize model performance.
+    
+    ROC curve shows the trade-off between:
+    - True Positive Rate (sensitivity): Fraud correctly identified
+    - False Positive Rate: Normal transactions incorrectly flagged
+    
+    Args:
+        y_test: True labels
+        reconstruction_errors: Anomaly scores (reconstruction errors)
+    """
+    # Calculate ROC curve points
+    fpr, tpr, thresholds = roc_curve(y_test, reconstruction_errors)
+    auc_value = auc(fpr, tpr)
+    
+    # Create the plot
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, color='darkorange', lw=2, 
+             label=f'ROC curve (AUC = {auc_value:.3f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', 
+             label='Random classifier')
+    
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curve - Fraud Detection Performance')
+    plt.legend(loc="lower right")
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+def plot_training_history(history):
+    """
+    Plot training history to visualize training progress.
+    
+    Args:
+        history: Training history from model.fit()
+    """
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+    
+    # Plot training & validation loss
+    ax1.plot(history.history['loss'], label='Training Loss')
+    ax1.plot(history.history['val_loss'], label='Validation Loss')
+    ax1.set_title('Model Loss')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Loss')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Plot training & validation MAE
+    ax2.plot(history.history['mae'], label='Training MAE')
+    ax2.plot(history.history['val_mae'], label='Validation MAE')
+    ax2.set_title('Model MAE')
+    ax2.set_xlabel('Epoch')
+    ax2.set_ylabel('MAE')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+
+def hyperparameter_optimization(X_train, X_test, y_train, y_test):
+    """
+    Perform grid search to find optimal hyperparameters.
+    
+    This is computationally expensive but important for maximizing performance.
+    In practice, you might use more sophisticated optimization techniques.
+    
+    Args:
+        X_train, X_test, y_train, y_test: Training and test data
+        
+    Returns:
+        dict: Best hyperparameters found
+    """
+    print("\n" + "="*50)
+    print("HYPERPARAMETER OPTIMIZATION")
+    print("="*50)
+    
+    # Define hyperparameter grid
+    param_grid = {
+        'encoding_dim': [2, 4, 8, 16],
+        'learning_rate': [0.001, 0.01, 0.1],
+        'epochs': [30, 50, 100],
+        'batch_size': [16, 32, 64]
+    }
+    
+    best_auc = 0
+    best_params = {}
+    
+    print("Starting grid search...")
+    print(f"Total combinations to test: {len(param_grid['encoding_dim']) * len(param_grid['learning_rate']) * len(param_grid['epochs']) * len(param_grid['batch_size'])}")
+    
+    for encoding_dim in param_grid['encoding_dim']:
+        for learning_rate in param_grid['learning_rate']:
+            for epochs in param_grid['epochs']:
+                for batch_size in param_grid['batch_size']:
+                    
+                    print(f"\nTesting: encoding_dim={encoding_dim}, lr={learning_rate}, epochs={epochs}, batch_size={batch_size}")
+                    
+                    # Create and train model
+                    autoencoder = create_autoencoder(
+                        input_dim=X_train.shape[1],
+                        encoding_dim=encoding_dim,
+                        learning_rate=learning_rate
+                    )
+                    
+                    # Train with minimal output
+                    history = autoencoder.fit(
+                        X_train[y_train == 0], 
+                        X_train[y_train == 0],
+                        epochs=epochs,
+                        batch_size=batch_size,
+                        validation_split=0.1,
+                        verbose=0
+                    )
+                    
+                    # Evaluate
+                    reconstruction_errors, auc_score = evaluate_model(autoencoder, X_test, y_test)
+                    
+                    print(f"AUC: {auc_score:.4f}")
+                    
+                    # Update best parameters
+                    if auc_score > best_auc:
+                        best_auc = auc_score
+                        best_params = {
+                            'encoding_dim': encoding_dim,
+                            'learning_rate': learning_rate,
+                            'epochs': epochs,
+                            'batch_size': batch_size,
+                            'auc_score': auc_score
+                        }
+    
+    print(f"\n" + "="*50)
+    print("OPTIMIZATION RESULTS")
+    print("="*50)
+    print(f"Best AUC Score: {best_auc:.4f}")
+    print(f"Best Parameters: {best_params}")
+    
+    return best_params
+
+def main():
+    """
+    Main function to orchestrate the fraud detection pipeline.
+    """
+    print("="*60)
+    print("CREDIT CARD FRAUD DETECTION USING AUTOENCODERS")
+    print("="*60)
+    
+    try:
+        # Step 1: Load the dataset
+        df = load_dataset()
+        
+        # Step 2: Explore the dataset
+        explore_dataset(df)
+        
+        # Step 3: Feature engineering
+        df_engineered = feature_engineering(df)
+        
+        # Step 4: Prepare the data
+        X_train, X_test, y_train, y_test, scaler = prepare_data(df_engineered)
+        
+        # Step 5: Create the autoencoder model
+        autoencoder = create_autoencoder(
+            input_dim=X_train.shape[1],
+            encoding_dim=8,
+            learning_rate=0.001
+        )
+        
+        # Step 6: Train the autoencoder
+        history = train_autoencoder(
+            autoencoder, 
+            X_train, 
+            y_train, 
+            epochs=50, 
+            batch_size=32
+        )
+        
+        # Step 7: Evaluate the model
+        reconstruction_errors, auc_score = evaluate_model(autoencoder, X_test, y_test)
+        
+        # Step 8: Visualize the results
+        plot_training_history(history)
+        plot_roc_curve(y_test, reconstruction_errors)
+        
+        # Optional: Hyperparameter optimization (uncomment to run)
+        # print("\nStarting hyperparameter optimization...")
+        # best_params = hyperparameter_optimization(X_train, X_test, y_train, y_test)
+        
+        print("\n" + "="*60)
+        print("FRAUD DETECTION PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*60)
+        print(f"Final AUC Score: {auc_score:.4f}")
+        
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        print("Please check your data and try again.")
+
+if __name__ == "__main__":
+    main()
