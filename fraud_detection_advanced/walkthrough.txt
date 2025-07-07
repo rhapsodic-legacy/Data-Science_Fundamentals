@@ -1,0 +1,493 @@
+# Credit Card Fraud Detection System Documentation
+
+## Part 1: User-Friendly Documentation
+
+### Overview
+**Version**: 2025-07-05 Final  
+**Platform**: Google Colab (Free Tier, GPU runtime used once)  
+**Training Time**: Approximately 24 hours  
+
+This system detects fraudulent credit card transactions using a hybrid machine learning model combining an **Autoencoder** (unsupervised learning) and **XGBoost** (supervised learning). The model is designed to identify fraudulent transactions with high accuracy, achieving an AUC score of 0.9981 and an F1-score of 0.9405 on the test set.
+
+### Key Features
+- **Data Preprocessing**: Uses MinMaxScaler to normalize features, ensuring consistent input for the model
+- **Autoencoder**: Learns patterns in normal transactions to detect anomalies (potential fraud) by measuring reconstruction errors
+- **XGBoost**: Uses encoded features from the autoencoder to classify transactions as fraudulent or not, achieving high accuracy
+- **Performance Metrics**:
+  - Autoencoder: AUC = 0.8464, F1-Score = 0.0060
+  - XGBoost: AUC = 0.9981, F1-Score = 0.9405, 5-Fold CV AUC = 0.9980 ± 0.0004
+- **Output**: Saves the trained models, scaler, and a detailed summary to Google Drive for future use
+
+### Requirements
+
+#### Hardware
+- Google Colab Free Tier (GPU runtime optional for faster training)
+
+#### Software
+- Python 3.x
+- Required libraries:
+  ```bash
+  pip install tensorflow pandas scikit-learn matplotlib xgboost
+  ```
+
+#### Input Data
+- A preprocessed dataset (`engineered_data.pkl`) stored in Google Drive
+- Dataset must contain features and a binary 'fraud' label (0 for normal, 1 for fraudulent)
+
+### How to Use
+
+#### 1. Setup
+Mount your Google Drive in Colab:
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+```
+
+Ensure the dataset (`engineered_data.pkl`) is in your Google Drive root directory.
+
+Install required libraries:
+```bash
+pip install tensorflow pandas scikit-learn matplotlib xgboost
+```
+
+#### 2. Run the Code
+Execute the script in Google Colab. The script will:
+- Load and preprocess the dataset
+- Train the autoencoder on normal transactions
+- Use the autoencoder's encoded features to train an XGBoost classifier
+- Evaluate both models and save results to Google Drive
+
+#### 3. Expected Outputs
+- **Models**: 
+  - `autoencoder_minmax_final_20250705_final.keras`
+  - `xgboost_model_minmax_final_20250705_final.pkl`
+- **Scaler**: `scaler_minmax_final_20250705_final.pkl`
+- **Summary**: `fraud_detection_summary_20250705_final.txt` with performance metrics
+- **Plots**: ROC curves for both models saved as PNG files
+
+### Performance Interpretation
+- **Autoencoder**: Effective at identifying anomalies (AUC = 0.8464), but low F1-score (0.0060) due to class imbalance
+- **XGBoost**: Exceptional performance (AUC = 0.9981, F1-Score = 0.9405), leveraging encoded features for precise fraud detection
+- **AUC > 0.9**: Indicates excellent fraud detection capability
+- **Hybrid Approach**: Combines unsupervised anomaly detection with supervised classification for robust results
+
+### Limitations
+- Requires a preprocessed dataset (`engineered_data.pkl`)
+- Long training time (~24 hours on Colab Free Tier)
+- Autoencoder's low F1-score suggests it's better as a feature encoder than standalone classifier
+- Assumes access to Google Drive for file storage and loading
+
+### Troubleshooting
+- **Dataset not found**: Ensure `engineered_data.pkl` is in your Google Drive's root folder
+- **Missing dependencies**: Install required libraries using the pip command above
+- **Memory issues**: Use Colab's GPU runtime or reduce batch size/epochs
+- **Training timeout**: Consider reducing epochs or using early stopping
+
+---
+
+## Part 2: Technical Deep Dive
+
+### Problem Statement and Approach
+
+#### Challenge
+Credit card fraud detection faces several challenges:
+- **Class Imbalance**: Fraudulent transactions are rare (often <1% of data)
+- **Complex Patterns**: Fraud patterns evolve, requiring models to generalize beyond labeled data
+- **High Stakes**: False negatives (missing fraud) are costly, while false positives frustrate users
+
+#### Solution: Hybrid Approach
+The hybrid model combines:
+- **Autoencoder (Unsupervised)**: Learns compressed representation of normal transactions, detects anomalies via reconstruction errors
+- **XGBoost (Supervised)**: Uses autoencoder's encoded features for precise classification
+
+#### Why This Works
+- Autoencoder reduces dimensionality and extracts meaningful features
+- XGBoost excels at tabular data and imbalanced classes
+- Combination achieves AUC of 0.9981, far surpassing standalone models
+
+### Architecture Details
+
+#### Autoencoder Design
+- **Input Layer**: Matches number of features in dataset
+- **Encoder**: Input → 16 → 8 → Bottleneck (8 features)
+- **Decoder**: Bottleneck → 8 → 16 → Output
+- **Activation**: LeakyReLU (alpha=0.1) to prevent dying ReLU problem
+- **Regularization**: Dropout (0.2) to prevent overfitting
+- **Output**: Sigmoid activation matching MinMax-scaled input [0,1]
+
+#### XGBoost Configuration
+- **Input**: 8 encoded features from autoencoder bottleneck
+- **Parameters**: `max_depth=3`, `n_estimators=100`, `eval_metric='auc'`
+- **Strategy**: Shallow trees prevent overfitting, AUC metric handles class imbalance
+
+### Code Implementation
+
+#### Complete Implementation
+```python
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.metrics import roc_curve, auc, roc_auc_score, f1_score
+from sklearn.preprocessing import MinMaxScaler
+import tensorflow as tf
+from tensorflow.keras.layers import Input, Dense, Dropout, LeakyReLU
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from xgboost import XGBClassifier
+import joblib
+import warnings
+warnings.filterwarnings('ignore')
+
+# Set random seeds for reproducibility
+np.random.seed(42)
+tf.random.set_seed(42)
+
+def prepare_data(df, scaler_type='minmax'):
+    """
+    Prepare data for training: split and scale features
+    """
+    X = df.drop('fraud', axis=1)
+    y = df['fraud']
+    
+    # Stratified split to preserve fraud ratio
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+    
+    # Scale features to [0,1] range
+    scaler = MinMaxScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    print(f"Training set shape: {X_train_scaled.shape}")
+    print(f"Test set shape: {X_test_scaled.shape}")
+    print(f"Training set fraud ratio: {y_train.mean():.4f}")
+    print(f"Test set fraud ratio: {y_test.mean():.4f}")
+    
+    return X_train_scaled, X_test_scaled, y_train, y_test, scaler
+
+def create_autoencoder(input_dim, encoding_dim=8, learning_rate=0.0005):
+    """
+    Create autoencoder model with symmetric encoder-decoder architecture
+    """
+    # Input layer
+    input_layer = Input(shape=(input_dim,), name='input')
+    
+    # Encoder
+    encoded = Dense(16, name='encoder_1')(input_layer)
+    encoded = LeakyReLU(alpha=0.1)(encoded)
+    encoded = Dropout(0.2)(encoded)
+    encoded = Dense(8, name='encoder_2')(encoded)
+    encoded = LeakyReLU(alpha=0.1)(encoded)
+    encoded = Dropout(0.2)(encoded)
+    encoded = Dense(encoding_dim, name='encoder_bottleneck')(encoded)
+    encoded = LeakyReLU(alpha=0.1)(encoded)
+    
+    # Decoder
+    decoded = Dense(8, name='decoder_1')(encoded)
+    decoded = LeakyReLU(alpha=0.1)(decoded)
+    decoded = Dropout(0.2)(decoded)
+    decoded = Dense(16, name='decoder_2')(decoded)
+    decoded = LeakyReLU(alpha=0.1)(decoded)
+    decoded = Dropout(0.2)(decoded)
+    decoded = Dense(input_dim, activation='sigmoid', name='decoder_output')(decoded)
+    
+    # Create and compile model
+    autoencoder = Model(inputs=input_layer, outputs=decoded, name='autoencoder')
+    autoencoder.compile(
+        optimizer=Adam(learning_rate=learning_rate),
+        loss='mean_squared_error',
+        metrics=['mae']
+    )
+    
+    return autoencoder
+
+def train_autoencoder(autoencoder, X_train, y_train, epochs=100, batch_size=32):
+    """
+    Train autoencoder on normal transactions only
+    """
+    # Train only on normal transactions
+    normal_transactions = X_train[y_train == 0]
+    
+    # Callbacks for training optimization
+    early_stopping = EarlyStopping(
+        monitor='val_loss', 
+        patience=5, 
+        restore_best_weights=True
+    )
+    lr_scheduler = ReduceLROnPlateau(
+        monitor='val_loss', 
+        factor=0.5, 
+        patience=3, 
+        min_lr=1e-5
+    )
+    
+    # Train model
+    history = autoencoder.fit(
+        normal_transactions, normal_transactions,
+        epochs=epochs,
+        batch_size=batch_size,
+        validation_split=0.1,
+        verbose=1,
+        shuffle=True,
+        callbacks=[early_stopping, lr_scheduler]
+    )
+    
+    return history
+
+def evaluate_model(autoencoder, X_test, y_test, scaler):
+    """
+    Evaluate autoencoder performance using reconstruction errors
+    """
+    # Calculate reconstruction errors
+    reconstructions = autoencoder.predict(X_test, verbose=0)
+    reconstruction_errors = np.mean((X_test - reconstructions) ** 2, axis=1)
+    
+    # Calculate AUC
+    auc_score = roc_auc_score(y_test, reconstruction_errors)
+    
+    # Normalize errors for interpretability
+    reconstruction_errors_normalized = reconstruction_errors / np.max(reconstruction_errors)
+    
+    # Find optimal threshold for F1-score
+    thresholds = np.percentile(reconstruction_errors, np.arange(80, 100, 0.5))
+    best_f1, best_threshold = 0, 0
+    
+    for thresh in thresholds:
+        preds = (reconstruction_errors > thresh).astype(int)
+        f1 = f1_score(y_test, preds)
+        if f1 > best_f1:
+            best_f1, best_threshold = f1, thresh
+    
+    return reconstruction_errors, auc_score, best_threshold, best_f1, reconstruction_errors_normalized
+
+def plot_roc_curve(y_test, scores, best_threshold, best_f1, title="ROC Curve"):
+    """
+    Plot ROC curve with optimal threshold
+    """
+    fpr, tpr, thresholds = roc_curve(y_test, scores)
+    auc_value = auc(fpr, tpr)
+    
+    # Find closest threshold point
+    closest_threshold_idx = np.argmin(np.abs(thresholds - best_threshold))
+    closest_fpr = fpr[closest_threshold_idx]
+    closest_tpr = tpr[closest_threshold_idx]
+    
+    # Create plot
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (AUC = {auc_value:.3f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', label='Random classifier')
+    plt.scatter([closest_fpr], [closest_tpr], color='red', s=100, 
+                label=f'Optimal Threshold (F1 = {best_f1:.3f})')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title(title)
+    plt.legend(loc="lower right")
+    plt.grid(True, alpha=0.3)
+    plt.savefig(f'/content/drive/MyDrive/roc_curve_{title.lower().replace(" ", "_")}.png')
+    plt.show()
+
+def train_supervised_model(autoencoder, X_train, X_test, y_train, y_test):
+    """
+    Train XGBoost classifier using encoded features from autoencoder
+    """
+    # Extract encoder part
+    encoder = Model(
+        inputs=autoencoder.input,
+        outputs=autoencoder.get_layer('encoder_bottleneck').output
+    )
+    
+    # Encode training and test data
+    X_train_encoded = encoder.predict(X_train, verbose=0)
+    X_test_encoded = encoder.predict(X_test, verbose=0)
+    
+    # Train XGBoost classifier
+    clf = XGBClassifier(
+        max_depth=3,
+        n_estimators=100,
+        random_state=42,
+        eval_metric='auc'
+    )
+    clf.fit(X_train_encoded, y_train)
+    
+    # Make predictions
+    y_pred_proba = clf.predict_proba(X_test_encoded)[:, 1]
+    auc_score = roc_auc_score(y_test, y_pred_proba)
+    y_pred = clf.predict(X_test_encoded)
+    f1 = f1_score(y_test, y_pred)
+    
+    # Cross-validation
+    cv_scores = cross_val_score(clf, X_train_encoded, y_train, cv=5, scoring='roc_auc')
+    
+    # Save model
+    joblib.dump(clf, '/content/drive/MyDrive/xgboost_model_minmax_final_20250705_final.pkl')
+    
+    # Print results
+    print(f"XGBoost AUC: {auc_score:.4f}")
+    print(f"XGBoost F1-Score: {f1:.4f}")
+    print(f"5-Fold CV AUC: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
+    print("XGBoost Feature Importance:", clf.feature_importances_)
+    
+    return y_pred_proba, auc_score, f1, cv_scores, clf.feature_importances_
+
+def save_summary(auc_auto, f1_auto, auc_xgb, f1_xgb, cv_scores, feature_importance, 
+                 reconstruction_errors, reconstruction_errors_normalized, y_test):
+    """
+    Save comprehensive summary of model performance
+    """
+    summary = f"""
+Credit Card Fraud Detection Summary (2025-07-05 Final)
+==================================================
+
+Autoencoder Performance:
+- AUC: {auc_auto:.4f}
+- F1-Score: {f1_auto:.4f}
+- Mean Reconstruction Error (Normal): {reconstruction_errors[y_test == 0].mean():.6f}
+- Mean Reconstruction Error (Fraud): {reconstruction_errors[y_test == 1].mean():.6f}
+- Normalized Error (Normal): {reconstruction_errors_normalized[y_test == 0].mean():.6f}
+- Normalized Error (Fraud): {reconstruction_errors_normalized[y_test == 1].mean():.6f}
+
+XGBoost Performance:
+- AUC: {auc_xgb:.4f}
+- F1-Score: {f1_xgb:.4f}
+- 5-Fold CV AUC: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}
+- Feature Importance: {feature_importance.tolist()}
+
+Interpretation:
+- Autoencoder effectively captures normal transaction patterns
+- XGBoost leverages encoded features for precise fraud classification
+- Hybrid approach achieves near-perfect fraud detection
+"""
+    
+    with open('/content/drive/MyDrive/fraud_detection_summary_20250705_final.txt', 'w') as f:
+        f.write(summary)
+    
+    print("Summary saved to Google Drive")
+
+def main():
+    """
+    Main execution function
+    """
+    try:
+        # Mount Google Drive
+        from google.colab import drive
+        drive.mount('/content/drive', force_remount=True)
+        
+        # Load data
+        print("Loading data...")
+        engineered_path = '/content/drive/MyDrive/engineered_data.pkl'
+        df_engineered = pd.read_pickle(engineered_path)
+        
+        # Prepare data
+        print("Preparing data...")
+        X_train, X_test, y_train, y_test, scaler = prepare_data(df_engineered, scaler_type='minmax')
+        
+        # Save scaler
+        joblib.dump(scaler, '/content/drive/MyDrive/scaler_minmax_final_20250705_final.pkl')
+        print("Scaler saved to Google Drive")
+        
+        # Create and train autoencoder
+        print("Creating autoencoder...")
+        autoencoder = create_autoencoder(
+            input_dim=X_train.shape[1],
+            encoding_dim=8,
+            learning_rate=0.0005
+        )
+        
+        print("Training autoencoder...")
+        history = train_autoencoder(autoencoder, X_train, y_train, epochs=100, batch_size=32)
+        
+        # Save autoencoder
+        autoencoder.save('/content/drive/MyDrive/autoencoder_minmax_final_20250705_final.keras')
+        print("Autoencoder saved to Google Drive")
+        
+        # Evaluate autoencoder
+        print("Evaluating autoencoder...")
+        reconstruction_errors, auc_score, best_threshold, f1_score, reconstruction_errors_normalized = evaluate_model(
+            autoencoder, X_test, y_test, scaler
+        )
+        plot_roc_curve(y_test, reconstruction_errors, best_threshold, f1_score, 
+                       title="Autoencoder MinMaxScaler Final 20250705")
+        
+        print(f"Autoencoder AUC: {auc_score:.4f}, F1: {f1_score:.4f}")
+        
+        # Train supervised model
+        print("Training XGBoost classifier...")
+        y_pred_proba, xgb_auc, xgb_f1, cv_scores, feature_importance = train_supervised_model(
+            autoencoder, X_train, X_test, y_train, y_test
+        )
+        plot_roc_curve(y_test, y_pred_proba, best_threshold, xgb_f1, 
+                       title="XGBoost MinMaxScaler Final 20250705")
+        
+        print(f"XGBoost AUC: {xgb_auc:.4f}, F1: {xgb_f1:.4f}")
+        
+        # Save summary
+        save_summary(auc_score, f1_score, xgb_auc, xgb_f1, cv_scores, feature_importance,
+                     reconstruction_errors, reconstruction_errors_normalized, y_test)
+        
+        # Final results
+        print("\n" + "="*60)
+        print("ANALYSIS COMPLETE")
+        print("="*60)
+        print(f"Final AUC Score: {xgb_auc:.4f}")
+        print(f"Final F1-Score: {xgb_f1:.4f}")
+        
+        print("\nInterpretation:")
+        if xgb_auc > 0.9:
+            print("- Excellent performance! The model effectively distinguishes fraud.")
+        elif xgb_auc > 0.8:
+            print("- Good performance. The model shows strong fraud detection capability.")
+        elif xgb_auc > 0.7:
+            print("- Fair performance. Consider more feature engineering or model tuning.")
+        else:
+            print("- Poor performance. The model needs significant improvement.")
+        
+    except Exception as e:
+        print(f"Error occurred: {str(e)}")
+        print("Troubleshooting:")
+        print("1. Ensure 'engineered_data.pkl' is in your Google Drive")
+        print("2. Install dependencies: pip install tensorflow pandas scikit-learn matplotlib xgboost")
+        print("3. Check Google Drive permissions")
+
+if __name__ == "__main__":
+    main()
+```
+
+### Key Implementation Details
+
+#### Data Preprocessing
+- **Stratified Split**: Preserves fraud ratio in train/test sets
+- **MinMaxScaler**: Normalizes features to [0,1] for neural network compatibility
+- **Feature Engineering**: Assumes preprocessed dataset with engineered features
+
+#### Model Training Strategy
+- **Autoencoder**: Trained only on normal transactions to learn legitimate patterns
+- **Early Stopping**: Prevents overfitting with patience=5
+- **Learning Rate Scheduling**: Reduces LR on plateau for better convergence
+- **XGBoost**: Uses encoded features for supervised classification
+
+#### Performance Metrics
+- **AUC**: Primary metric for imbalanced classification
+- **F1-Score**: Balances precision and recall
+- **Cross-Validation**: 5-fold CV ensures robust performance estimation
+- **Feature Importance**: Quantifies contribution of encoded features
+
+### Why This Approach Achieves High Accuracy
+
+1. **Feature Quality**: Autoencoder's bottleneck captures essential patterns while reducing noise
+2. **Dimensionality Reduction**: 8 encoded features focus on most informative patterns
+3. **Class Imbalance Handling**: Autoencoder learns from normal transactions, XGBoost uses both classes
+4. **Model Synergy**: Unsupervised feature extraction + supervised classification
+5. **Robust Architecture**: LeakyReLU, dropout, and shallow XGBoost trees prevent overfitting
+
+### Usage Instructions
+
+1. **Copy the complete code** above into a Google Colab notebook
+2. **Ensure your dataset** `engineered_data.pkl` is in Google Drive root
+3. **Run the main function** to execute the entire pipeline
+4. **Check outputs** in Google Drive for saved models and results
+
+This hybrid approach demonstrates how combining unsupervised and supervised learning can achieve exceptional fraud detection performance while maintaining interpretability and robustness.

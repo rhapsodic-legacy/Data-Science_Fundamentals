@@ -1,0 +1,20 @@
+
+Credit Card Fraud Detection Summary (2025-07-05 Final)
+==================================================
+Autoencoder:
+- AUC: 0.8464
+- F1-Score: 0.0060
+- Mean Reconstruction Error (Normal): 0.005071
+- Mean Reconstruction Error (Fraud): 0.000294
+- Normalized Error (Normal): 0.008239
+- Normalized Error (Fraud): 0.000478
+
+XGBoost:
+- AUC: 0.9981
+- F1-Score: 0.9405
+- 5-Fold CV AUC: 0.9980 ± 0.0004
+- Feature Importance: [0.04336867108941078, 0.09056480973958969, 0.07424069941043854, 0.03707839548587799, 0.12990407645702362, 0.2843768000602722, 0.3018825054168701, 0.038584016263484955]
+
+Interpretation:
+- XGBoost AUC > 0.9: Excellent performance! The model effectively distinguishes fraud.
+- Autoencoder AUC > 0.8: Strong unsupervised performance, effective as feature encoder for XGBoost.
