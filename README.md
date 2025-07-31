@@ -7,7 +7,7 @@
 This repository contains a series of projects designed to demonstrate fundamental concepts in machine learning and data science. Each project is a self-contained example of a specific technique or algorithm.
 
 ### Contents
-
+ 
 **sentiment_analysis_imdb**: A sentiment analysis project using the IMDB dataset and Keras. 
 + sentiment_analysis_imdb.py: The Python code for the sentiment analysis model.
 + walkthrough.txt: A detailed walkthrough of the code and its implementation. 
