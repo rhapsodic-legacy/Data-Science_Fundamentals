@@ -2,7 +2,7 @@
 
 #### A collection of simple machine learning and data science projects. 
 
-### Purpose 
+### Purpose  
 
 This repository contains a series of projects designed to demonstrate fundamental concepts in machine learning and data science. Each project is a self-contained example of a specific technique or algorithm.
    
