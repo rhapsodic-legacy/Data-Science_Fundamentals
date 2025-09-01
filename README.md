@@ -1,6 +1,6 @@
 # Machine Learning Projects
 
-#### A collection of simple machine learning and data science projects.
+#### A collection of simple machine learning and data science projects. 
 
 ### Purpose
 
