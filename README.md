@@ -20,7 +20,7 @@ This repository contains a series of projects designed to demonstrate fundamenta
 + fraud_detection_hybrid.py: The Python code for the fraud detection hybrid autoencoder-XGBoost. 
 + walkthrough.txt: A detailed walkthrough of the code for the machine learning model and its implementation.
 + summary-of-results.txt: A list of the results from running the hybrid model, including 99.81% AUC.  
-  
+   
     
 ### License  
 
