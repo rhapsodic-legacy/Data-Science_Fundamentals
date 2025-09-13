@@ -22,7 +22,7 @@ This repository contains a series of projects designed to demonstrate fundamenta
 + summary-of-results.txt: A list of the results from running the hybrid model, including 99.81% AUC.  
  
   
-### License
+### License 
 
 This repository is licensed under the MIT License.
 
