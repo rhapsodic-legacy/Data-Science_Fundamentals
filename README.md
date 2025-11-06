@@ -14,7 +14,7 @@ This repository contains a series of projects designed to demonstrate fundamenta
        
 **fraud_detection_basic**: A fraud detection project utilising the Kaggle fraud detection dataset.     
 + fraud_detection.py: The Python code for the fraud detection autoencoder.       
-+ walkthrough.txt: A detailed walkthrough of the code and its implementation.          
++ walkthrough.txt: A detailed walkthrough of the code and its implementation.           
       
 **fraud_detection_advanced**: A continuation of 'fraud_detection_kaggle', introducing an XGBoost supervised model atop the autoencoder.   
 + fraud_detection_hybrid.py: The Python code for the fraud detection hybrid autoencoder-XGBoost. 
